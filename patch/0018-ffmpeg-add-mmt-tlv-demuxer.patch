@@ -1,25 +1,27 @@
-From ec717f6a29975a4269deed89df3daaa5c8d4fc39 Mon Sep 17 00:00:00 2001
+From 4b709dd092f4b13c0a03dd233e587ee4ac39acc1 Mon Sep 17 00:00:00 2001
 From: KwokShing <KwokShing@users.noreply.github.com>
 Date: Sun, 2 Aug 2026 10:13:49 -0700
 Subject: [PATCH] ffmpeg: add MMT/TLV demuxer patch
 
-Apply the nine commits unique to saindriches/FFmpeg mmt-tlv on top of the official FFmpeg repository.
+Apply the nine commits unique to saindriches/FFmpeg mmt-tlv on top of the
+official FFmpeg repository, followed by a compatibility fix for the current
+public parser API.
 ---
- packages/ffmpeg-mmt-tlv.patch | 3299 +++++++++++++++++++++++++++++++++
+ packages/ffmpeg-mmt-tlv.patch | 3376 +++++++++++++++++++++++++++++++++
  packages/ffmpeg.cmake         |    1 +
- 2 files changed, 3300 insertions(+)
+ 2 files changed, 3377 insertions(+)
  create mode 100644 packages/ffmpeg-mmt-tlv.patch
 
 diff --git a/packages/ffmpeg-mmt-tlv.patch b/packages/ffmpeg-mmt-tlv.patch
 new file mode 100644
-index 0000000..ce557e2
+index 0000000..812423d
 --- /dev/null
 +++ b/packages/ffmpeg-mmt-tlv.patch
-@@ -0,0 +1,3299 @@
-+From 8cabbcfb40a070b85d5a785df87ca0ec81b2ab23 Mon Sep 17 00:00:00 2001
+@@ -0,0 +1,3376 @@
++From 292dd07203911d050a4842bad414e1b076959ac6 Mon Sep 17 00:00:00 2001
 +From: SuperFashi <admin@superfashi.com>
 +Date: Sun, 12 Jan 2025 05:11:44 +0900
-+Subject: [PATCH 1/9] avformat: add MMTP parser and MMT/TLV demuxer
++Subject: [PATCH 01/10] avformat: add MMTP parser and MMT/TLV demuxer
 +MIME-Version: 1.0
 +Content-Type: text/plain; charset=UTF-8
 +Content-Transfer-Encoding: 8bit
@@ -2272,10 +2274,10 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From fc32f0844c43b8ba72d1ce7408bc15cc185e35da Mon Sep 17 00:00:00 2001
++From a10cc0d9d591c1bf6c811a65a1a7062d39273c1d Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Fri, 3 Jul 2026 22:14:02 +0900
-+Subject: [PATCH 2/9] avformat/mmttlv: harden allocation and MFU parsing
++Subject: [PATCH 02/10] avformat/mmttlv: harden allocation and MFU parsing
 +
 +Faults on live and multi-gigabyte captures: av_malloc failures returned
 +AVERROR(errno), which av_malloc never sets, and an unchecked parse context was
@@ -2386,10 +2388,10 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From 5ba9b99c25a88c8ac673d567a05700f26162dadb Mon Sep 17 00:00:00 2001
++From 445497b9cea3e28fc973f62ff820b75913f6cb1e Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Fri, 3 Jul 2026 22:16:28 +0900
-+Subject: [PATCH 3/9] avformat/mmttlv: seekable byte index with a robust
++Subject: [PATCH 03/10] avformat/mmttlv: seekable byte index with a robust
 + timestamp probe
 +
 +The demuxer exposed no byte position, so AVFMT_GENERIC_INDEX never grew and a
@@ -2747,10 +2749,10 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From 3228227cd1f3b18b3ab7e34a3f73f0cb0f045ae5 Mon Sep 17 00:00:00 2001
++From 9aa5286ae1fff42ddfb4312eab9b30127d5d0666 Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Fri, 3 Jul 2026 22:19:25 +0900
-+Subject: [PATCH 4/9] avformat/mmttlv: build HEVC extradata from in-band
++Subject: [PATCH 04/10] avformat/mmttlv: build HEVC extradata from in-band
 + parameter sets
 +
 +The MFU stream carries VPS/SPS/PPS in-band only, so the HEVC decoder loses them
@@ -2880,10 +2882,11 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From 012c151abde90bc846fa46b0d1e4222ba54ad5dd Mon Sep 17 00:00:00 2001
++From 91abf546229e546202f2ebd486e4d4e9c6f42f96 Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Fri, 3 Jul 2026 22:19:26 +0900
-+Subject: [PATCH 5/9] avformat/mmttlv: expose program and audio-track metadata
++Subject: [PATCH 05/10] avformat/mmttlv: expose program and audio-track
++ metadata
 +
 +Adopt only the MH-EIT present section for the running program, expose the
 +MH-audio-component text as the audio track title and mark the main component
@@ -3006,10 +3009,10 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From 3901c77447e02a2bcd91d21807b7cf226ceb52b2 Mon Sep 17 00:00:00 2001
++From 778eeb3db027636dd7a6cef7c1c75220a018359a Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Sun, 26 Jul 2026 06:14:16 +0900
-+Subject: [PATCH 6/9] avformat/mmttlv: report EOF on a short read while
++Subject: [PATCH 06/10] avformat/mmttlv: report EOF on a short read while
 + resyncing
 +
 +avio_read() returns a SHORT count at end of file without returning an error, so
@@ -3065,10 +3068,10 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From af67dd3303c9ca7771571610f58f1fa8a352e3d8 Mon Sep 17 00:00:00 2001
++From 18edd8fd4445cad0062f65c0e782a560dac8751b Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Sun, 26 Jul 2026 06:14:44 +0900
-+Subject: [PATCH 7/9] avformat/mmttlv: treat read_timestamp's pos_limit as an
++Subject: [PATCH 07/10] avformat/mmttlv: treat read_timestamp's pos_limit as an
 + absolute position
 +
 +pos_limit is the position the probe must not read past, not a byte budget: see
@@ -3153,10 +3156,10 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From 30cf355007e10a6ecbff9cfff39671abdcd3b4c6 Mon Sep 17 00:00:00 2001
++From 06a921699d419fdeb6ea932afaa05df94462c3d5 Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Sun, 26 Jul 2026 06:15:07 +0900
-+Subject: [PATCH 8/9] avformat/mmttlv: restore the post-seek resync hardening
++Subject: [PATCH 08/10] avformat/mmttlv: restore the post-seek resync hardening
 +
 +Three parts were lost when the series was rewritten, and the seek path needs all
 +of them once it lands blind at an interpolated byte offset:
@@ -3279,10 +3282,10 @@ index 0000000..ce557e2
 +2.45.1.windows.1
 +
 +
-+From e174aff0f0893c97356f3928ade1d965c865deec Mon Sep 17 00:00:00 2001
++From b81b19dd3961eea3962a843b426578fa94a70be5 Mon Sep 17 00:00:00 2001
 +From: Rainbaby <rainbaby@outlook.jp>
 +Date: Sun, 26 Jul 2026 06:57:27 +0900
-+Subject: [PATCH 9/9] avformat/mmtp: include network.h instead of
++Subject: [PATCH 09/10] avformat/mmtp: include network.h instead of
 + <netinet/in.h>
 +
 +mmtp.c needs struct in_addr / in6_addr for the compressed-IP header layouts.
@@ -3315,11 +3318,87 @@ index 0000000..ce557e2
 +-- 
 +2.45.1.windows.1
 +
++
++From 2aad23285a8fefa74cf2d50f2cc63bb2f62c9195 Mon Sep 17 00:00:00 2001
++From: KwokShing <kwokshingchan92@gmail.com>
++Date: Sun, 2 Aug 2026 14:14:06 -0700
++Subject: [PATCH 10/10] avformat/mmt: use the public parser API
++
++Current FFmpeg keeps AVCodecParser implementation details private. Route
++MMT access units through av_parser_parse2 while preserving the demuxer's
++explicit timestamp, byte-position, and packet-flag handoff.
++
++Also advance the parser input cursor and annotate the intentional TLV
++header fallthrough.
++---
++ libavformat/mmtp.c   | 16 +++++++++-------
++ libavformat/mmttlv.c |  1 +
++ 2 files changed, 10 insertions(+), 7 deletions(-)
++
++diff --git a/libavformat/mmtp.c b/libavformat/mmtp.c
++index ef7e9568..fbb3de25 100644
++--- a/libavformat/mmtp.c
+++++ b/libavformat/mmtp.c
++@@ -1487,10 +1487,10 @@ static void hevc_capture_parameter_set(struct Streams *st,
++ static int
++ emit_packet(MMTPContext *ctx, struct Streams *st, uint8_t *data, int size)
++ {
++-    int           err;
++-    int           consumed;
++-    const uint8_t *out_data = NULL;
++-    int           out_size  = 0;
+++    int      err;
+++    int      consumed;
+++    uint8_t *out_data = NULL;
+++    int      out_size = 0;
++ 
++     if (st->parser == NULL) {
++         st->parser = av_parser_init(st->stream->codecpar->codec_id);
++@@ -1512,11 +1512,13 @@ emit_packet(MMTPContext *ctx, struct Streams *st, uint8_t *data, int size)
++             st->flags  = 0;
++         }
++ 
++-        consumed = st->parser->parser->parser_parse(
+++        consumed = av_parser_parse2(
++             st->parser, ffstream(st->stream)->avctx,
++             &out_data, &out_size,
++-            data, size
+++            data, size,
+++            st->parser->pts, st->parser->dts, st->parser->pos
++         );
+++        data += consumed;
++         size -= consumed;
++ 
++         if (out_data == NULL) {
++@@ -1532,7 +1534,7 @@ emit_packet(MMTPContext *ctx, struct Streams *st, uint8_t *data, int size)
++                    "dropping the extra frame\n", ctx->current_pid);
++             break;
++         }
++-        ctx->pkt->data = (uint8_t *) out_data;
+++        ctx->pkt->data = out_data;
++         ctx->pkt->size = out_size;
++ 
++         if ((err = av_packet_make_refcounted(ctx->pkt)) < 0)
++diff --git a/libavformat/mmttlv.c b/libavformat/mmttlv.c
++index a72d4f10..403d367c 100644
++--- a/libavformat/mmttlv.c
+++++ b/libavformat/mmttlv.c
++@@ -190,6 +190,7 @@ static int mmttlv_read_compressed_ip_packet(
++             return AVERROR_INVALIDDATA;
++         size -= PARTIAL_IPV6_HEADER_LENGTH + PARTIAL_UDP_HEADER_LENGTH;
++         buf += PARTIAL_IPV6_HEADER_LENGTH + PARTIAL_UDP_HEADER_LENGTH;
+++        av_fallthrough;
++     case CONTEXT_IDENTIFICATION_NO_COMPRESSED_HEADER:
++         break;
++     default:
++-- 
++2.45.1.windows.1
++
 diff --git a/packages/ffmpeg.cmake b/packages/ffmpeg.cmake
-index b9ab7a3..dfbe9b1 100644
+index 252c687..56ae522 100644
 --- a/packages/ffmpeg.cmake
 +++ b/packages/ffmpeg.cmake
-@@ -48,6 +48,7 @@ ExternalProject_Add(ffmpeg
+@@ -50,6 +50,7 @@ ExternalProject_Add(ffmpeg
      SOURCE_DIR ${SOURCE_LOCATION}
      GIT_CLONE_FLAGS "--sparse --filter=tree:0"
      GIT_CLONE_POST_COMMAND "sparse-checkout set --no-cone /* !tests/ref/fate"
