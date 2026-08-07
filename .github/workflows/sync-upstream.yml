@@ -2,8 +2,7 @@ name: Sync upstream
 
 on:
   schedule:
-    # Every Monday at 02:00 UTC (10:00 Beijing time)
-    - cron: "0 2 * * *"
+    - cron: "0 17 * * *"
   workflow_dispatch:
 
 permissions:
