@@ -8,8 +8,8 @@ permissions:
 
 on: 
   schedule:
-    # Run daily, at 18:00 UTC (after the daily sync-upstream at 17:00 UTC).
-    - cron: '0 18 * * *'
+    # Run daily, at 23:00 UTC (after the daily sync-upstream at 17:00 UTC).
+    - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       build_target:
