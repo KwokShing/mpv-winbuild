@@ -21,9 +21,15 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          # GITHUB_TOKEN (a GitHub App token) is not allowed to push changes under
+          # .github/workflows. Provide a PAT with `workflow` scope as SYNC_PAT to
+          # sync upstream workflow changes.
+          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Merge upstream
         shell: bash
+        env:
+          HAS_PAT: ${{ secrets.SYNC_PAT != '' }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -35,5 +41,14 @@ jobs:
             echo "Already up to date"
             exit 0
           fi
-          git merge --no-edit upstream/main
+          base="$(git rev-parse HEAD)"
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort || true
+            echo "::error::Merge conflict with upstream/main, resolve it locally and push."
+            exit 1
+          fi
+          if [[ "$HAS_PAT" != "true" ]] && ! git diff --quiet "$base" HEAD -- .github/workflows; then
+            echo "::error::Upstream changes touch .github/workflows, which GITHUB_TOKEN cannot push. Add a repository secret SYNC_PAT (classic PAT with 'workflow' scope, or fine-grained PAT with Contents + Workflows write) and re-run."
+            exit 1
+          fi
           git push origin HEAD:main
