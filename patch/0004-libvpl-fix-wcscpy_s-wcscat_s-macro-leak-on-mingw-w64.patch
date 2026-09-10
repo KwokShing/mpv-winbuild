@@ -1,0 +1,134 @@
+From d42d384c8788ee09a7b4c3be01860771c27fa0f6 Mon Sep 17 00:00:00 2001
+From: KwokShing <KwokShing@users.noreply.github.com>
+Date: Wed, 9 Sep 2026 19:17:50 -0700
+Subject: [PATCH] libvpl: fix wcscpy_s/wcscat_s macro leak on mingw-w64
+
+libvpl's mfx_dispatcher_defs.h guards its legacy secure-CRT emulation with
+`#if _MSC_VER < 1400`. _MSC_VER is undefined for clang/gcc, so the
+preprocessor substitutes 0 and the macros get defined unconditionally. They
+expand to a statement sequence, and current mingw-w64 <stralign.h> (reached via
+<windows.h>) calls wcscpy_s() from inside a return expression, so
+mfx_dispatcher.cpp and mfx_load_dll.cpp fail to build:
+
+  install/x86_64-w64-mingw32/include/stralign.h:208:67: error: expected ')'
+  install/x86_64-w64-mingw32/include/stralign.h:208:67: error: cannot initialize
+      return object of type 'PUWSTR' (aka 'wchar_t *') with an rvalue of type 'void'
+  install/x86_64-w64-mingw32/include/stralign.h:208:150: error: extraneous ')' before ';'
+
+That stralign.h block was dead code until mingw-w64 fixed a _WConst_Return /
+_WConst_return typo in its guard, which is why this only started failing now.
+---
+ packages/libvpl-mingw-secure-crt.patch | 88 ++++++++++++++++++++++++++
+ packages/libvpl.cmake                  |  1 +
+ 2 files changed, 89 insertions(+)
+ create mode 100644 packages/libvpl-mingw-secure-crt.patch
+
+diff --git a/packages/libvpl-mingw-secure-crt.patch b/packages/libvpl-mingw-secure-crt.patch
+new file mode 100644
+index 0000000..51b5db0
+--- /dev/null
++++ b/packages/libvpl-mingw-secure-crt.patch
+@@ -0,0 +1,88 @@
++From c8fe8baf2dc060f503c005d1c92d2723dd35fa3e Mon Sep 17 00:00:00 2001
++From: KwokShing <KwokShing@users.noreply.github.com>
++Date: Wed, 9 Sep 2026 19:05:50 -0700
++Subject: [PATCH] dispatcher: don't define wcscpy_s/wcscat_s on non-MSVC
++ compilers
++
++mfx_dispatcher_defs.h guards its legacy secure-CRT emulation with
++`#if _MSC_VER < 1400`. On any non-MSVC compiler _MSC_VER is undefined, the
++preprocessor substitutes 0, and 0 < 1400 holds, so the macros are defined
++unconditionally.
++
++Those macros expand to a statement sequence, not an expression. Current
++mingw-w64 <stralign.h> (pulled in by <windows.h>) contains an inline
++ua_wcscpy_s() that calls wcscpy_s() from inside a return expression, so any
++translation unit that includes mfx_dispatcher_defs.h before <windows.h> fails:
++
++    stralign.h:208:67: error: expected ')'
++    stralign.h:208:67: error: cannot initialize return object of type 'PUWSTR'
++                              (aka 'wchar_t *') with an rvalue of type 'void'
++    stralign.h:208:150: error: extraneous ')' before ';'
++
++This block used to be dead code because its guard misspelled _WConst_return
++as _WConst_Return; fixing that typo upstream exposed the latent libvpl bug.
++It breaks mfx_dispatcher.cpp and mfx_load_dll.cpp when cross-compiling with
++clang/gcc for mingw-w64.
++
++Require _MSC_VER to actually be defined, and for a non-MSVC toolchain that
++genuinely lacks the secure string API fall back to inline functions instead of
++macros so that platform headers keep seeing a real, expression-usable
++wcscpy_s()/wcscat_s().
++---
++ libvpl/src/windows/mfx_dispatcher_defs.h | 27 +++++++++++++++++++++++-
++ 1 file changed, 26 insertions(+), 1 deletion(-)
++
++diff --git a/libvpl/src/windows/mfx_dispatcher_defs.h b/libvpl/src/windows/mfx_dispatcher_defs.h
++index 38fd221..5c83379 100644
++--- a/libvpl/src/windows/mfx_dispatcher_defs.h
+++++ b/libvpl/src/windows/mfx_dispatcher_defs.h
++@@ -7,6 +7,7 @@
++ #pragma once
++ #include <cstdio>
++ #include <cstring>
+++#include <cwchar>
++ #include "vpl/mfxdefs.h"
++ 
++ #if defined(MFX_DISPATCHER_LOG)
++@@ -17,13 +18,37 @@
++ #define MAX_PLUGIN_PATH 4096
++ #define MAX_PLUGIN_NAME 4096
++ 
++-#if _MSC_VER < 1400
+++// Pre-VS2005 MSVC has no secure CRT string functions, so emulate them.
+++//
+++// The _MSC_VER test must be guarded by defined(_MSC_VER): on any other compiler
+++// _MSC_VER is undefined and the preprocessor substitutes 0, so the macros below
+++// used to be defined unconditionally. That leaks them into the platform headers,
+++// because <windows.h> pulls in <stralign.h> whose inline ua_wcscpy_s() calls
+++// wcscpy_s() from inside a return expression - and a statement-shaped macro
+++// cannot be used there:
+++//   stralign.h: error: expected ')'
+++//   stralign.h: error: cannot initialize return object of type 'PUWSTR' ...
+++#if defined(_MSC_VER) && _MSC_VER < 1400
++     #define wcscpy_s(to, to_size, from) \
++         (void)(to_size);                \
++         wcscpy(to, from)
++     #define wcscat_s(to, to_size, from) \
++         (void)(to_size);                \
++         wcscat(to, from)
+++#elif !defined(_MSC_VER) && !defined(_WSTRING_S_DEFINED)
+++    // Non-MSVC toolchain (mingw-w64) whose CRT does not declare the secure
+++    // string API. Use inline functions rather than macros so that the platform
+++    // headers keep seeing a real wcscpy_s()/wcscat_s() usable as an expression.
+++    static inline int wcscpy_s(wchar_t *to, size_t to_size, const wchar_t *from) {
+++        (void)(to_size);
+++        wcscpy(to, from);
+++        return 0;
+++    }
+++    static inline int wcscat_s(wchar_t *to, size_t to_size, const wchar_t *from) {
+++        (void)(to_size);
+++        wcscat(to, from);
+++        return 0;
+++    }
++ #endif
++ 
++ // declare library module's handle
++-- 
++2.55.0.windows.3
++
+diff --git a/packages/libvpl.cmake b/packages/libvpl.cmake
+index d934857..524729e 100644
+--- a/packages/libvpl.cmake
++++ b/packages/libvpl.cmake
+@@ -4,6 +4,7 @@ ExternalProject_Add(libvpl
+     GIT_CLONE_FLAGS "--filter=tree:0"
+     GIT_REMOTE_NAME origin
+     GIT_TAG main
++    PATCH_COMMAND ${EXEC} git am --3way ${CMAKE_CURRENT_SOURCE_DIR}/libvpl-mingw-secure-crt.patch
+     UPDATE_COMMAND ""
+     CONFIGURE_COMMAND ${EXEC} CONF=1 cmake -H<SOURCE_DIR> -B<BINARY_DIR>
+         -G Ninja
+-- 
+2.55.0.windows.3
+
